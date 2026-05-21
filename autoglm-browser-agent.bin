@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>反应挑战王</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0a0a1e;
+    overflow: hidden;
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    width: 100vw; height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  #game {
+    width: 100%; max-width: 420px;
+    height: 100%; max-height: 820px;
+    position: relative;
+    background: linear-gradient(180deg, #0a0a2e 0%, #1a0a2e 50%, #0a1a2e 100%);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* 顶部 HUD */
+  #hud {
+    position: relative;
+    z-index: 10;
+    padding: 40px 20px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .hud-item { text-align: center; }
+  .hud-label { font-size: 0.7rem; color: rgba(255,255,255,0.4); text-transform: uppercase; letter-spacing: 2px; }
+  .hud-value { font-size: 1.8rem; font-weight: 900; color: #fff; line-height: 1.2; }
+  #combo-display {
+    opacity: 0;
+    transform: scale(0.5);
+    transition: all 0.2s ease;
+  }
+  #combo-display.active {
+    opacity: 1;
+    transform: scale(1);
+  }
+  #combo-display .hud-value { background: linear-gradient(135deg, #FFD700, #FF6B6B); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+  /* 游戏区域 */
+  #play-area {
+    flex: 1;
+    position: relative;
+    z-index: 5;
+  }
+
+  /* 目标 */
+  .target {
+    position: absolute;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 900;
+    color: rgba(255,255,255,0.9);
+    text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    animation: targetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3), inset 0 -3px 6px rgba(0,0,0,0.2), inset 0 3px 6px rgba(255,255,255,0.15);
+    transition: transform 0.05s;
+  }
+  .target:active { transform: scale(0.9); }
+  .target.correct {}
+  .target.wrong {
+    animation: shake 0.4s ease;
+    box-shadow: 0 0 40px rgba(255,0,0,0.6);
+  }
+  .target.popped {
+    animation: pop 0.35s ease forwards;
+    pointer-events: none;
+  }
+  @keyframes targetIn {
+    from { transform: scale(0) rotate(180deg); opacity: 0; }
+    to { transform: scale(1) rotate(0deg); opacity: 1; }
+  }
+  @keyframes pop {
+    0% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.8; }
+    100% { transform: scale(0); opacity: 0; }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-8px); }
+    40% { transform: translateX(8px); }
+    60% { transform: translateX(-6px); }
+    80% { transform: translateX(6px); }
+  }
+
+  /* 粒子 */
+  .particle {
+    position: absolute;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: particleFly 0.6s ease-out forwards;
+  }
+  @keyframes particleFly {
+    0% { transform: translate(0,0) scale(1); opacity: 1; }
+    100% { transform: translate(var(--dx), var(--dy)) scale(0); opacity: 0; }
+  }
+
+  /* 分数飘出 */
+  .score-pop {
+    position: absolute;
+    font-weight: 900;
+    font-size: 1.2rem;
+    color: #FFD700;
+    pointer-events: none;
+    animation: scoreUp 0.8s ease-out forwards;
+    text-shadow: 0 0 10px rgba(255,215,0,0.5);
+    white-space: nowrap;
+  }
+  @keyframes scoreUp {
+    0% { transform: translateY(0) scale(0.5); opacity: 1; }
+    100% { transform: translateY(-60px) scale(1.2); opacity: 0; }
+  }
+
+  /* 底部提示 */
+  #hint-bar {
+    position: relative;
+    z-index: 10;
+    padding: 16px 20px;
+    text-align: center;
+  }
+  #target-color-name {
+    display: inline-block;
+    font-size: 1.4rem;
+    font-weight: 900;
+    padding: 10px 28px;
+    border-radius: 50px;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    color: #fff;
+    letter-spacing: 2px;
+    border: 2px solid rgba(255,255,255,0.1);
+    transition: all 0.3s ease;
+  }
+  #target-color-indicator {
+    display: inline-block;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: middle;
+    box-shadow: 0 0 12px currentColor;
+  }
+
+  /* ===== 覆盖层 ===== */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10,10,30,0.85);
+    backdrop-filter: blur(10px);
+    padding: 40px 30px;
+  }
+
+  /* 主菜单 */
+  #menu .game-logo {
+    font-size: 3.5rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, #FFD700, #FF6B6B, #FFD700);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 200%;
+    animation: shimmer 3s ease infinite;
+    margin-bottom: 4px;
+  }
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  #menu .subtitle {
+    color: rgba(255,255,255,0.5);
+    font-size: 1rem;
+    margin-bottom: 50px;
+    letter-spacing: 4px;
+  }
+  #menu .best-score {
+    color: rgba(255,255,255,0.4);
+    font-size: 0.9rem;
+    margin-bottom: 30px;
+  }
+  #menu .best-score span {
+    color: #FFD700;
+    font-weight: 700;
+    font-size: 1.3rem;
+  }
+  .btn {
+    display: inline-block;
+    padding: 16px 48px;
+    border-radius: 50px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .btn:active { transform: scale(0.95); }
+  .btn-play {
+    background: linear-gradient(135deg, #FF6B6B, #ee5a24);
+    color: #fff;
+    box-shadow: 0 10px 40px rgba(238,90,36,0.4);
+    animation: pulse-btn 2s ease infinite;
+  }
+  @keyframes pulse-btn {
+    0%, 100% { box-shadow: 0 10px 40px rgba(238,90,36,0.4); }
+    50% { box-shadow: 0 10px 60px rgba(238,90,36,0.7); }
+  }
+  .btn-share {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    margin-top: 12px;
+  }
+
+  /* 倒计时 */
+  #countdown {
+    font-size: 7rem;
+    font-weight: 900;
+    color: #fff;
+    animation: countPop 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes countPop {
+    0% { transform: scale(2); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  /* Game Over */
+  #gameover {}
+  #gameover .final-score {
+    font-size: 4.5rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, #FFD700, #FF6B6B);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  #gameover .rank-badge {
+    font-size: 1.2rem;
+    font-weight: 700;
+    padding: 6px 20px;
+    border-radius: 50px;
+    margin-bottom: 20px;
+  }
+  .rank-s { background: linear-gradient(135deg, #FFD700, #FFA500); color: #000; }
+  .rank-a { background: rgba(255,107,107,0.3); color: #FF6B6B; border: 1px solid rgba(255,107,107,0.5); }
+  .rank-b { background: rgba(108,92,231,0.3); color: #a29bfe; border: 1px solid rgba(108,92,231,0.5); }
+  .rank-c { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+  #gameover .stats-row {
+    display: flex;
+    gap: 30px;
+    margin: 20px 0 30px;
+  }
+  #gameover .stat-item { text-align: center; }
+  #gameover .stat-item .val { font-size: 1.4rem; font-weight: 700; color: #fff; }
+  #gameover .stat-item .lbl { font-size: 0.75rem; color: rgba(255,255,255,0.4); }
+
+  /* 难度条 */
+  #difficulty-bar {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 3px;
+    z-index: 10;
+    background: rgba(255,255,255,0.1);
+  }
+  #difficulty-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #00CEC9, #FFD700, #FF6B6B);
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  /* 提示浮层 */
+  #toast {
+    position: absolute;
+    top: 120px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    font-weight: 900;
+    font-size: 1.2rem;
+    color: #00CEC9;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.3s ease;
+  }
+  #toast.show {
+    opacity: 1;
+    animation: toastPop 0.8s ease-out;
+  }
+  @keyframes toastPop {
+    0% { transform: translateX(-50%) translateY(10px); opacity: 0; }
+    30% { transform: translateX(-50%) translateY(-10px); opacity: 1; }
+    100% { transform: translateX(-50%) translateY(-30px); opacity: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="game">
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hud-item">
+      <div class="hud-label">得分</div>
+      <div class="hud-value" id="score">0</div>
+    </div>
+    <div class="hud-item" id="combo-display">
+      <div class="hud-label">连击</div>
+      <div class="hud-value" id="combo">x1</div>
+    </div>
+    <div class="hud-item">
+      <div class="hud-label">时间</div>
+      <div class="hud-value" id="timer">30</div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- 游戏区域 -->
+  <div id="play-area"></div>
+
+  <!-- 难度进度条 -->
+  <div id="difficulty-bar"><div id="difficulty-fill"></div></div>
+
+  <!-- 底部提示 -->
+  <div id="hint-bar">
+    <div id="target-color-name">
+      <span id="target-color-indicator"></span>
+      <span id="target-color-text">红色</span>
+    </div>
+  </div>
+
+  <!-- 主菜单 -->
+  <div class="overlay" id="menu">
+    <div class="game-logo">反应挑战王</div>
+    <div class="subtitle">⚡ 眼疾手快 ⚡</div>
+    <div class="best-score">🏆 最高分：<span id="best-score-display">0</span></div>
+    <button class="btn btn-play" onclick="startGame()">开始挑战</button>
+  </div>
+
+  <!-- 倒计时 -->
+  <div class="overlay" id="countdown-overlay" style="display:none">
+    <div id="countdown"></div>
+  </div>
+
+  <!-- Game Over -->
+  <div class="overlay" id="gameover" style="display:none">
+    <div class="final-score" id="final-score">0</div>
+    <div class="rank-badge" id="rank-badge">手速王者</div>
+    <div class="stats-row">
+      <div class="stat-item"><div class="val" id="go-max-combo">0</div><div class="lbl">最高连击</div></div>
+      <div class="stat-item"><div class="val" id="go-accuracy">0%</div><div class="lbl">准确率</div></div>
+      <div class="stat-item"><div class="val" id="go-targets">0</div><div class="lbl">击中数</div></div>
+    </div>
+    <button class="btn btn-play" onclick="restartGame()">再来一局</button>
+    <button class="btn btn-share" onclick="shareScore()">📤 分享成绩</button>
+  </div>
+
+</div>
+
+<script>
+// ==================== 游戏状态 ====================
+const COLORS = [
+  { name: '红色', hex: '#FF4757', emoji: '🔴' },
+  { name: '蓝色', hex: '#3742FA', emoji: '🔵' },
+  { name: '绿色', hex: '#2ED573', emoji: '🟢' },
+  { name: '黄色', hex: '#FFA502', emoji: '🟡' },
+  { name: '紫色', hex: '#A855F7', emoji: '🟣' },
+  { name: '粉色', hex: '#FF6B81', emoji: '💗' },
+  { name: '青色', hex: '#00D2D3', emoji: '🩵' },
+];
+
+const GAME_DURATION = 30; // 秒
+let state = {
+  score: 0,
+  combo: 0,
+  maxCombo: 0,
+  targetsHit: 0,
+  targetsMissed: 0,
+  timeLeft: GAME_DURATION,
+  currentTargetColor: null,
+  targetsOnScreen: [],
+  running: false,
+  timerInterval: null,
+  spawnInterval: null,
+  difficulty: 1, // 1-10
+};
+
+// ==================== DOM 元素 ====================
+const $ = (id) => document.getElementById(id);
+const playArea = $('play-area');
+const menu = $('menu');
+const countdownOverlay = $('countdown-overlay');
+const countdownEl = $('countdown');
+const gameoverOverlay = $('gameover');
+const toast = $('toast');
+
+// ==================== 音效 (简易振荡器) ====================
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playBeep(freq, duration, type='sine', vol=0.1) {
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.value = vol;
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+function sfxCorrect() { playBeep(880, 0.12, 'sine', 0.08); setTimeout(()=>playBeep(1100, 0.1, 'sine', 0.06), 60); }
+function sfxWrong() { playBeep(200, 0.3, 'sawtooth', 0.08); }
+function sfxCombo() { playBeep(1200, 0.08, 'square', 0.05); }
+function sfxCountdown() { playBeep(600, 0.15, 'sine', 0.1); }
+function sfxGo() { playBeep(1000, 0.2, 'triangle', 0.12); setTimeout(()=>playBeep(1500, 0.3, 'triangle', 0.1), 100); }
+
+// ==================== 最高分 ====================
+function getBestScore() {
+  return parseInt(localStorage.getItem('reaction_king_best') || '0');
+}
+function setBestScore(s) {
+  const best = getBestScore();
+  if (s > best) localStorage.setItem('reaction_king_best', s);
+}
+$('best-score-display').textContent = getBestScore();
+
+// ==================== Toast ====================
+let toastTimer;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.remove('show');
+  void toast.offsetWidth;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 800);
+}
+
+// ==================== 粒子 ====================
+function spawnParticles(x, y, color) {
+  const count = 10;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.left = x + 'px';
+    p.style.top = y + 'px';
+    p.style.background = color;
+    const angle = (Math.PI * 2 * i) / count;
+    const dist = 30 + Math.random() * 40;
+    p.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
+    p.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
+    playArea.appendChild(p);
+    setTimeout(() => p.remove(), 600);
+  }
+}
+
+// ==================== 分数飘出 ====================
+function spawnScorePop(x, y, text) {
+  const el = document.createElement('div');
+  el.className = 'score-pop';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.textContent = text;
+  playArea.appendChild(el);
+  setTimeout(() => el.remove(), 800);
+}
+
+// ==================== 生成目标 ====================
+function spawnTarget(isCorrect) {
+  const areaRect = playArea.getBoundingClientRect();
+  const margin = 50;
+  const size = Math.max(46, 70 - state.difficulty * 2);
+
+  // 避开其他目标的碰撞检测
+  let x, y, attempts = 0;
+  do {
+    x = margin + Math.random() * (areaRect.width - margin * 2 - size);
+    y = margin + Math.random() * (areaRect.height - margin * 2 - size);
+    attempts++;
+  } while (attempts < 50 && state.targetsOnScreen.some(t => {
+    const dx = t.x - x, dy = t.y - y;
+    return Math.sqrt(dx*dx + dy*dy) < size * 1.5;
+  }));
+
+  const color = isCorrect
+    ? state.currentTargetColor
+    : COLORS.filter(c => c !== state.currentTargetColor)[Math.floor(Math.random() * (COLORS.length - 1))];
+
+  const el = document.createElement('div');
+  el.className = 'target';
+  el.style.width = size + 'px';
+  el.style.height = size + 'px';
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.background = `radial-gradient(circle at 35% 35%, ${lighten(color.hex, 40)}, ${color.hex})`;
+  el.dataset.color = color.name;
+  el.dataset.hex = color.hex;
+  el.dataset.isCorrect = isCorrect;
+  el.innerHTML = color.emoji;
+
+  el.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!state.running) return;
+    handleTargetClick(el, x, y, isCorrect, color);
+  });
+
+  playArea.appendChild(el);
+  state.targetsOnScreen.push({ el, x, y, isCorrect });
+
+  // 自动消失计时（难度越高越快）
+  const lifetime = Math.max(1200, 2500 - state.difficulty * 150);
+  setTimeout(() => {
+    if (el.parentNode && !el.classList.contains('popped') && !el.classList.contains('wrong')) {
+      if (isCorrect) {
+        state.targetsMissed++;
+        state.combo = 0;
+        updateComboDisplay();
+        el.classList.add('pop', 'wrong');
+        el.style.background = `radial-gradient(circle at 35% 35%, #555, #333)`;
+        sfxWrong();
+      }
+      setTimeout(() => {
+        el.remove();
+        state.targetsOnScreen = state.targetsOnScreen.filter(t => t.el !== el);
+      }, 350);
+    }
+  }, lifetime);
+}
+
+function handleTargetClick(el, x, y, isCorrect, color) {
+  if (el.classList.contains('popped')) return;
+
+  if (isCorrect) {
+    // 正确！
+    el.classList.add('popped');
+    state.targetsHit++;
+    state.combo++;
+    if (state.combo > state.maxCombo) state.maxCombo = state.combo;
+
+    // 加分（连击加成）
+    const comboBonus = Math.min(state.combo - 1, 10);
+    const baseScore = 10;
+    const earned = baseScore + comboBonus * 5;
+    state.score += earned;
+
+    // 特效
+    const rect = el.getBoundingClientRect();
+    const areaRect = playArea.getBoundingClientRect();
+    spawnParticles(rect.left - areaRect.left + rect.width/2, rect.top - areaRect.top + rect.height/2, color.hex);
+    if (state.combo >= 5) {
+      spawnScorePop(rect.left - areaRect.left + rect.width/2, rect.top - areaRect.top,
+        state.combo % 5 === 0 ? `🔥 ${state.combo}连击！` : `+${earned}`);
+    }
+
+    sfxCorrect();
+    if (state.combo >= 10 && state.combo % 5 === 0) { sfxCombo(); showToast(`${state.combo}连击！太强了！`); }
+    if (state.combo >= 5 && state.combo < 10 && state.combo % 5 === 0) showToast(`${state.combo}连击！`);
+
+    updateScore();
+    updateComboDisplay();
+
+    // 移除该目标
+    setTimeout(() => {
+      el.remove();
+      state.targetsOnScreen = state.targetsOnScreen.filter(t => t.el !== el);
+    }, 350);
+
+  } else {
+    // 错误！
+    el.classList.add('wrong');
+    state.combo = 0;
+    state.targetsMissed++;
+    updateComboDisplay();
+    sfxWrong();
+    if (state.score >= 5) state.score = Math.max(0, state.score - 5);
+    updateScore();
+
+    setTimeout(() => {
+      el.classList.remove('wrong');
+    }, 400);
+  }
+}
+
+function updateScore() {
+  $('score').textContent = state.score;
+  $('score').style.transform = 'scale(1.2)';
+  setTimeout(() => $('score').style.transform = '', 150);
+}
+function updateComboDisplay() {
+  const display = $('combo-display');
+  $('combo').textContent = 'x' + state.combo;
+  if (state.combo >= 2) {
+    display.classList.add('active');
+  } else {
+    display.classList.remove('active');
+  }
+}
+function updateTimer() {
+  $('timer').textContent = state.timeLeft;
+  if (state.timeLeft <= 5) {
+    $('timer').style.color = '#FF4757';
+    $('timer').style.animation = 'none';
+    void $('timer').offsetWidth;
+    $('timer').style.animation = 'pulse 0.5s ease 3';
+  } else {
+    $('timer').style.color = '#fff';
+    $('timer').style.animation = '';
+  }
+}
+function updateDifficulty() {
+  const elapsed = GAME_DURATION - state.timeLeft;
+  state.difficulty = Math.min(10, 1 + Math.floor(elapsed / 3));
+  $('difficulty-fill').style.width = ((state.difficulty - 1) / 9 * 100) + '%';
+}
+
+function lighten(hex, percent) {
+  const num = parseInt(hex.replace('#',''), 16);
+  const r = Math.min(255, (num >> 16) + percent);
+  const g = Math.min(255, ((num >> 8) & 0xFF) + percent);
+  const b = Math.min(255, (num & 0xFF) + percent);
+  return `rgb(${r},${g},${b})`;
+}
+
+// ==================== 选择目标颜色 ====================
+function pickTargetColor() {
+  return COLORS[Math.floor(Math.random() * COLORS.length)];
+}
+
+function updateHintDisplay() {
+  const c = state.currentTargetColor;
+  $('target-color-indicator').style.background = c.hex;
+  $('target-color-indicator').style.color = c.hex;
+  $('target-color-text').textContent = c.name;
+  $('target-color-name').style.borderColor = c.hex + '55';
+}
+
+// ==================== 游戏循环 ====================
+function spawnWave() {
+  if (!state.running) return;
+
+  // 正确目标数量
+  const correctCount = 1;
+  // 干扰目标数量（随难度增长）
+  const distractors = Math.min(6, 2 + Math.floor(state.difficulty / 2));
+
+  for (let i = 0; i < correctCount; i++) spawnTarget(true);
+  for (let i = 0; i < distractors; i++) spawnTarget(false);
+}
+
+// ==================== 开始游戏 ====================
+function startGame() {
+  // 重置状态
+  state = {
+    score: 0,
+    combo: 0,
+    maxCombo: 0,
+    targetsHit: 0,
+    targetsMissed: 0,
+    timeLeft: GAME_DURATION,
+    currentTargetColor: pickTargetColor(),
+    targetsOnScreen: [],
+    running: false,
+    timerInterval: null,
+    spawnInterval: null,
+    difficulty: 1,
+  };
+
+  // UI 重置
+  $('score').textContent = '0';
+  $('score').style.color = '#fff';
+  $('timer').textContent = GAME_DURATION;
+  $('timer').style.color = '#fff';
+  $('timer').style.animation = '';
+  $('combo-display').classList.remove('active');
+  $('combo').textContent = 'x0';
+  $('difficulty-fill').style.width = '0%';
+  playArea.innerHTML = '';
+
+  updateHintDisplay();
+
+  // 隐藏菜单
+  menu.style.display = 'none';
+  gameoverOverlay.style.display = 'none';
+
+  // 倒计时 3-2-1
+  countdownOverlay.style.display = 'flex';
+  let count = 3;
+
+  function doCountdown() {
+    if (count > 0) {
+      countdownEl.textContent = count;
+      countdownEl.style.animation = 'none';
+      void countdownEl.offsetWidth;
+      countdownEl.style.animation = 'countPop 0.5s cubic-bezier(0.16, 1, 0.3, 1)';
+      sfxCountdown();
+      count--;
+      setTimeout(doCountdown, 600);
+    } else {
+      countdownEl.textContent = 'GO!';
+      countdownEl.style.color = '#FFD700';
+      sfxGo();
+      setTimeout(() => {
+        countdownOverlay.style.display = 'none';
+        countdownEl.style.color = '#fff';
+        beginPlay();
+      }, 400);
+    }
+  }
+  doCountdown();
+}
+
+function beginPlay() {
+  state.running = true;
+
+  // 第一个波次
+  spawnWave();
+
+  // 生成间隔（随难度缩短）
+  function scheduleNextWave() {
+    if (!state.running) return;
+    const interval = Math.max(700, 1800 - state.difficulty * 120);
+    state.spawnInterval = setTimeout(() => {
+      // 更换目标颜色
+      state.currentTargetColor = pickTargetColor();
+      updateHintDisplay();
+      spawnWave();
+      scheduleNextWave();
+    }, interval);
+  }
+  scheduleNextWave();
+
+  // 计时器
+  state.timerInterval = setInterval(() => {
+    state.timeLeft--;
+    updateTimer();
+    updateDifficulty();
+
+    if (state.timeLeft <= 0) {
+      endGame();
+    }
+  }, 1000);
+}
+
+// ==================== 结束游戏 ====================
+function endGame() {
+  state.running = false;
+  clearInterval(state.timerInterval);
+  clearTimeout(state.spawnInterval);
+
+  // 清理场上目标
+  playArea.querySelectorAll('.target').forEach(el => el.remove());
+  state.targetsOnScreen = [];
+
+  // 更新最高分
+  const prevBest = getBestScore();
+  const isNewBest = state.score > prevBest;
+  setBestScore(state.score);
+  $('best-score-display').textContent = Math.max(prevBest, state.score);
+
+  // 准确率
+  const totalClicks = state.targetsHit + state.targetsMissed;
+  const accuracy = totalClicks > 0 ? Math.round(state.targetsHit / totalClicks * 100) : 0;
+
+  // 段位
+  let rank, rankClass;
+  if (state.score >= 300) { rank = '👑 传奇手速'; rankClass = 'rank-s'; }
+  else if (state.score >= 200) { rank = '⚡ 闪电反应'; rankClass = 'rank-a'; }
+  else if (state.score >= 100) { rank = '🔥 眼疾手快'; rankClass = 'rank-b'; }
+  else { rank = '🌱 初出茅庐'; rankClass = 'rank-c'; }
+  if (isNewBest) rank = '🎉 新纪录！';
+
+  // 显示
+  $('final-score').textContent = state.score;
+  $('rank-badge').textContent = rank;
+  $('rank-badge').className = 'rank-badge ' + (isNewBest ? 'rank-s' : rankClass);
+  $('go-max-combo').textContent = state.maxCombo;
+  $('go-accuracy').textContent = accuracy + '%';
+  $('go-targets').textContent = state.targetsHit;
+
+  gameoverOverlay.style.display = 'flex';
+
+  // 胜利音效
+  if (isNewBest) {
+    setTimeout(() => playBeep(523, 0.15), 0);
+    setTimeout(() => playBeep(659, 0.15), 150);
+    setTimeout(() => playBeep(784, 0.15), 300);
+    setTimeout(() => playBeep(1047, 0.4), 450);
+  }
+}
+
+function restartGame() {
+  gameoverOverlay.style.display = 'none';
+  // 清理
+  clearInterval(state.timerInterval);
+  clearTimeout(state.spawnInterval);
+  playArea.innerHTML = '';
+  startGame();
+}
+
+// ==================== 分享 ====================
+function shareScore() {
+  const best = getBestScore();
+  const text = `⚡ 我在《反应挑战王》拿到了 ${state.score} 分！\n最高连击 ${state.maxCombo}x | 最高纪录 ${best} 分\n🔥 敢来挑战吗？`;
+  if (navigator.share) {
+    navigator.share({ title: '反应挑战王', text: text }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => showToast('已复制分享文案 📋'));
+  }
+}
+
+// ==================== 初始化 ====================
+menu.style.display = 'flex';
+gameoverOverlay.style.display = 'none';
+countdownOverlay.style.display = 'none';
+</script>
+</body>
+</html>
